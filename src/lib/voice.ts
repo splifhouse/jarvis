@@ -1,4 +1,14 @@
-import { BRIDGE_HTTP_URL } from '../config'
+import { BRIDGE_HTTP_URL, LANG, LOCALE } from '../config'
+
+const FR = LANG === 'fr'
+
+/**
+ * A whole-word alternation that also works on accented words. `\b` only knows
+ * ASCII letters, so `\bça` never matches and `arrête\b` matches inside
+ * `arrêtez`; Unicode lookarounds do what `\b` means.
+ */
+const wordsRe = (alternation: string, tail = '(?![\\p{L}\\p{N}])') =>
+  new RegExp(`(?<![\\p{L}\\p{N}'’])(?:${alternation})${tail}`, 'iu')
 import { getMic } from './audio'
 import { speakingNow, speakingSince } from './tts'
 import { startVad, type Vad } from './vad'
@@ -76,9 +86,14 @@ const WAKE_DEBOUNCE = 1500
  * Jervis, Jarvys or Java's for a perfectly clear utterance — every one of which
  * used to be silently discarded, so the wake word "just didn't work" with no
  * indication why. Better a rare false wake than a name that does not answer.
+ *
+ * The wake word is matched on the transcript, not by an English acoustic
+ * model, so "Hey Jarvis" keeps working with a French recogniser. A fr-FR
+ * recogniser spells the name its own way (Jarvisse, Jarvice, Djarvis) and the
+ * greeting as hé or eh, so those are here too.
  */
 const WAKE =
-  /\b(?:hey|hi|ok|okay|yo)?\s*(?:jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv)\b(?!'s)/i
+  /\b(?:hey|hi|ok|okay|yo|hé|eh|dis)?\s*(?:jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv|jarvisse|jarvice|djarvis|jarvi)\b(?!'s)/i
 
 /** Everything after the wake phrase, which is usually the actual command. */
 function afterWake(text: string): string {
@@ -122,8 +137,18 @@ function afterWake(text: string): string {
  * a way a content-word list could never be, and none of them is a plausible
  * last word of a real request.
  */
-const CONTINUES =
-  /\b(and|or|but|so|because|since|if|when|while|that|which|who|whose|to|of|in|on|at|by|for|with|from|about|into|onto|over|under|between|through|the|a|an|my|your|his|her|its|our|their|is|are|was|were|be|been|do|does|did|have|has|had|can|could|would|should|will|shall|might|must|like|than|then|as|very|really|just|some|any|all|both|either|neither)$/i
+const CONTINUES = FR
+  ? // Same idea in French. Left out on purpose: words that end real questions
+    // ("il y a", "c'est où", "c'est quand", "c'est tout", "j'en veux plus").
+    wordsRe(
+      "et|ou|mais|donc|car|parce que|puisque|si|lorsque|pendant que|que|qui|dont|" +
+        'à|de|du|des|le|la|les|un|une|au|aux|pour|par|avec|sans|dans|sur|sous|entre|vers|chez|' +
+        'mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leurs|ce|cet|cette|ces|' +
+        'est|sont|était|être|peux|peut|pouvez|veux|veut|voulez|dois|doit|devez|comme|très|quelques|' +
+        "l'|d'|j'|qu'|n'|s'|c'|m'|t'|l’|d’|j’|qu’|n’|s’|c’|m’|t’",
+      '$',
+    )
+  : /\b(and|or|but|so|because|since|if|when|while|that|which|who|whose|to|of|in|on|at|by|for|with|from|about|into|onto|over|under|between|through|the|a|an|my|your|his|her|its|our|their|is|are|was|were|be|been|do|does|did|have|has|had|can|could|would|should|will|shall|might|must|like|than|then|as|very|really|just|some|any|all|both|either|neither)$/i
 
 /** Trailing punctuation a transcriber emits mid-thought. */
 const TRAILS = /[,;:–—-]$/
@@ -254,10 +279,13 @@ function makeAssembler(h: {
 // Hearing himself
 // ---------------------------------------------------------------------------
 
+// Letters in any script survive, so "arrête" stays one word instead of
+// "arr te". In French the apostrophe separates words ("l'heure" is "l" +
+// "heure"); in English it holds a contraction together ("what's").
 const norm = (s: string) =>
   s
     .toLowerCase()
-    .replace(/[^a-z0-9' ]+/g, ' ')
+    .replace(FR ? /[^\p{L}\p{N} ]+/gu : /[^\p{L}\p{N}' ]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -266,8 +294,12 @@ const norm = (s: string) =>
  * he happens to be saying. Suppressing "stop" because he just said "stop"
  * would be the single most infuriating failure this file could have.
  */
-const OVERRIDE =
-  /\b(stop|wait|jarvis|cancel|enough|quiet|hold on|shut up|never ?mind|forget it|no)\b/i
+const OVERRIDE = FR
+  ? wordsRe(
+      'stop|stoppe|jarvis|attends|attendez|arrête|arrêtez|annule|annulez|silence|' +
+        'tais-toi|taisez-vous|chut|ça suffit|laisse tomber|laissez tomber|oublie|oubliez|non',
+    )
+  : /\b(stop|wait|jarvis|cancel|enough|quiet|hold on|shut up|never ?mind|forget it|no)\b/i
 
 /**
  * Words too common to be evidence of anything.
@@ -279,12 +311,22 @@ const OVERRIDE =
  * Only distinctive words count as proof he is hearing himself.
  */
 const STOP = new Set(
-  ('a an the and or but so of to in on at by for with from is are was were be ' +
-    'it its this that these those i you he she we they me him her them my your ' +
-    'our their what which who how why when where do does did can could would ' +
-    'should will shall not no yes if then than as about into over under out up ' +
-    'down one two three first second third now here there just very really got ' +
-    'get have has had say said tell me okay ok well right').split(' '),
+  (FR
+    ? 'le la les l un une des du de d à au aux et ou mais donc car que qu qui quoi ' +
+      'dont où est sont était être a ai as avons avez ont il elle ils elles je j tu ' +
+      'vous nous on me m te t se s lui leur leurs mon ma mes ton ta tes son sa ses ' +
+      'notre nos votre vos ce cet cette ces c ça cela ceci en y dans sur sous pour ' +
+      'par avec sans pas ne n non oui si plus moins très bien alors comment pourquoi ' +
+      'quand combien quel quelle quels quelles deux trois premier première deuxième ' +
+      'maintenant ici là juste vraiment dis dit fais fait peux peut monsieur ok ' +
+      'accord bon voilà'
+    : 'a an the and or but so of to in on at by for with from is are was were be ' +
+      'it its this that these those i you he she we they me him her them my your ' +
+      'our their what which who how why when where do does did can could would ' +
+      'should will shall not no yes if then than as about into over under out up ' +
+      'down one two three first second third now here there just very really got ' +
+      'get have has had say said tell me okay ok well right'
+  ).split(' '),
 )
 
 /**
@@ -450,7 +492,7 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
     if (mode === 'deaf') return
     const t0 = performance.now()
     try {
-      const res = await fetch(`${BRIDGE_HTTP_URL}/stt`, {
+      const res = await fetch(`${BRIDGE_HTTP_URL}/stt?lang=${LANG}`, {
         method: 'POST',
         headers: { 'content-type': blob.type || 'audio/webm' },
         body: blob,
@@ -760,7 +802,7 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     rec = new Ctor()
     rec.continuous = true
     rec.interimResults = true
-    rec.lang = 'en-GB'
+    rec.lang = LOCALE
     rec.onstart = () => {
       running = true
       diag.running = true

@@ -5,6 +5,8 @@ import {
   TTS_ENGINE,
   KOKORO_VOICE,
   BRIDGE_HTTP_URL,
+  LANG,
+  LOCALE,
 } from '../config'
 import * as kokoro from './kokoro'
 import { caps } from './capabilities'
@@ -174,6 +176,46 @@ const VOICE_PREF_KEY = 'jarvis.voice'
  * Voice → Manage Voices) and once installed it appears here automatically.
  */
 function score(v: SpeechSynthesisVoice): number {
+  return LANG === 'fr' ? scoreFrench(v) : scoreEnglish(v)
+}
+
+/**
+ * The same character in French: a male voice, as natural as is installed.
+ *
+ * On Windows the Edge "Online (Natural)" voices (Henri, Rémy) are far ahead of
+ * the old SAPI Paul; Chrome only sees the local ones. macOS ships Thomas. The
+ * Google voice in Chrome is female, so it is never ranked, only the last
+ * fallback.
+ */
+function scoreFrench(v: SpeechSynthesisVoice): number {
+  const n = v.name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+  let s = 0
+
+  if (/\bhenri\b/.test(n)) s += 100
+  else if (/\bremy\b/.test(n)) s += 90
+  else if (/\bthomas\b/.test(n)) s += 85
+  else if (/\b(paul|jacques|antoine|alain|claude|gerard|jerome|yves)\b/.test(n)) s += 70
+
+  if (n.includes('natural') || n.includes('premium')) s += 30
+  else if (n.includes('enhanced') || n.includes('online')) s += 20
+
+  if (/^fr[-_]fr/i.test(v.lang)) s += 25
+  else if (/^fr/i.test(v.lang)) s += 5
+
+  if (/\b(hortense|julie|denise|eloise|vivienne|amelie|audrey|marie|virginie|aurelie|celine|brigitte|yvette|coralie|josephine|charline|sylvie|caroline|ariane)\b/.test(n)) {
+    s -= 60
+  }
+
+  return s
+}
+
+/** Matches voices in the configured language. */
+const LANG_RE = new RegExp(`^${LANG}`, 'i')
+
+function scoreEnglish(v: SpeechSynthesisVoice): number {
   const n = v.name.toLowerCase()
   let s = 0
 
@@ -212,7 +254,7 @@ const USABLE = 40
 export function candidateVoices(): SpeechSynthesisVoice[] {
   return speechSynthesis
     .getVoices()
-    .filter((v) => /^en/i.test(v.lang))
+    .filter((v) => LANG_RE.test(v.lang))
     .map((v) => ({ v, s: score(v) }))
     .filter((x) => x.s >= USABLE)
     .sort((a, b) => b.s - a.s)
@@ -236,7 +278,7 @@ function pickVoice(): SpeechSynthesisVoice | null {
     localStorage.removeItem(VOICE_PREF_KEY)
   }
 
-  cachedVoice = candidateVoices()[0] ?? all.find((v) => /^en/i.test(v.lang)) ?? null
+  cachedVoice = candidateVoices()[0] ?? all.find((v) => LANG_RE.test(v.lang)) ?? null
   return cachedVoice
 }
 
@@ -477,7 +519,7 @@ export function createSpeaker(): Speaker {
       const u = new SpeechSynthesisUtterance(text)
       const voice = pickVoice()
       if (voice) u.voice = voice
-      u.lang = voice?.lang ?? 'en-GB'
+      u.lang = voice?.lang ?? LOCALE
       // Deliberate, and deliberately invariant — the character's pace does not
       // change with stakes, and that steadiness is most of the effect. This
       // lands around 130 wpm, below the median for film dialogue.
@@ -744,7 +786,7 @@ async function fetchCloudAudio(text: string): Promise<string | null> {
       const res = await fetch(`${BRIDGE_HTTP_URL}/tts`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, lang: LANG }),
       })
       if (res.ok) return URL.createObjectURL(await res.blob())
     } catch {
@@ -766,6 +808,9 @@ async function fetchCloudAudio(text: string): Promise<string | null> {
           body: JSON.stringify({
             text,
             model_id: 'eleven_flash_v2_5',
+            // Flash v2.5 is multilingual; this pins the language rather than
+            // letting it guess from a three-word filler.
+            language_code: LANG,
             voice_settings: {
               stability: 0.4,
               similarity_boost: 0.75,

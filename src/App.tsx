@@ -13,7 +13,7 @@ import * as hands from './lib/hands'
 import { listenForClap } from './lib/clap'
 import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
-import { TTS_ENGINE } from './config'
+import { LANG, TTS_ENGINE } from './config'
 import { forTool, attention } from './lib/fillers'
 import {
   ask,
@@ -598,7 +598,12 @@ export default function App() {
         silence()
         const demo = createSpeaker()
         speaker.current = demo
-        demo.say(`Voice set to ${name.replace(/\(.*?\)/g, '').trim()}. At your service, sir.`)
+        const voiceName = name.replace(/\(.*?\)/g, '').trim()
+        demo.say(
+          LANG === 'fr'
+            ? `Voix réglée sur ${voiceName}. À votre service, monsieur.`
+            : `Voice set to ${voiceName}. At your service, sir.`,
+        )
         void demo.end()
         return
       }
@@ -640,7 +645,11 @@ export default function App() {
         silence()
         const t = createSpeaker()
         speaker.current = t
-        t.say('Audio test. If you can hear this, speech output is working, sir.')
+        t.say(
+          LANG === 'fr'
+            ? 'Test audio. Si vous entendez ceci, la synthèse vocale fonctionne, monsieur.'
+            : 'Audio test. If you can hear this, speech output is working, sir.',
+        )
         void t.end().then(() => {
           const d = (window as unknown as Record<string, Record<string, unknown>>).__tts
           console.info('[jarvis] audio test →', d)

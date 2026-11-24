@@ -491,6 +491,43 @@ const SYSTEM_PROMPT = [
 ].join('')
 
 /**
+ * The language JARVIS speaks. The app says which on the socket URL and on
+ * /stt and /tts (from VITE_LANG); JARVIS_LANG is only the fallback for a
+ * client that does not say. Anything unrecognised is English.
+ */
+const LANGS = new Set(['en', 'fr'])
+const DEFAULT_LANG = LANGS.has(process.env.JARVIS_LANG?.trim())
+  ? process.env.JARVIS_LANG.trim()
+  : 'en'
+const langOf = (raw) => (LANGS.has(raw) ? raw : DEFAULT_LANG)
+
+/**
+ * Appended last, so it is the most recent thing the model read. The persona
+ * above describes a character, not a language; this carries the character
+ * into French rather than translating its examples word for word.
+ */
+const PROMPT_FRENCH = `
+
+LANGUAGE — FRENCH. Every word you say and every word you put on a blade is in
+French, whatever language the request arrives in and whatever language a tool
+result or web page is written in. The examples above are English only because
+the character was written in English; carry the register across, do not
+translate them literally.
+- "Sir" is "monsieur", with the same positional meaning: fronted is an alarm,
+  final is routine deference, mid-sentence is a correction.
+- Always "vous", never "tu".
+- The butler register in French: "Bien, monsieur" for understood, "Je crains
+  que" or "Malheureusement" for bad news, "Dois-je" or "Souhaitez-vous que je"
+  rather than "Je peux". Never "ouais", always "Oui."
+- No filler words in French either: no euh, bon, alors, du coup, en fait.
+- Numbers, dates and times as a French speaker says them: "huit heures quinze",
+  "le premier août", "trois virgule cinq" — never "8h15", "01/08" or "3,5".
+- Proper nouns, product names and titles stay as they are.`
+
+const systemPromptFor = (lang) =>
+  lang === 'fr' ? SYSTEM_PROMPT + PROMPT_FRENCH : SYSTEM_PROMPT
+
+/**
  * ElevenLabs credentials, borrowed from the MCP server config.
  *
  * If you've set up the elevenlabs MCP server, the key is already on this
@@ -889,8 +926,9 @@ const handleRequest = async (req, res) => {
     // Inside a try: this handler is async with nothing catching its rejection,
     // so a malformed body used to take the entire bridge down with it.
     let text
+    let lang
     try {
-      ;({ text } = JSON.parse(body || '{}'))
+      ;({ text, lang } = JSON.parse(body || '{}'))
     } catch {
       res.writeHead(400, cors)
       return res.end('bad json')
@@ -914,6 +952,9 @@ const handleRequest = async (req, res) => {
             // Flash is the low-latency model — a conversation needs speed more
             // than it needs the last few percent of quality.
             model_id: 'eleven_flash_v2_5',
+            // Flash v2.5 is multilingual; pin the language rather than let it
+            // guess from a three-word filler.
+            language_code: langOf(lang),
             voice_settings: {
               stability: 0.4,
               similarity_boost: 0.75,
@@ -949,7 +990,7 @@ const handleRequest = async (req, res) => {
   // use, and a server-side transcriber cannot. Detecting that the user is
   // speaking at all is done locally with voice-activity detection, which never
   // touches this endpoint; this is only for the words.
-  if (req.method === 'POST' && req.url === '/stt') {
+  if (req.method === 'POST' && (req.url === '/stt' || req.url?.startsWith('/stt?'))) {
     const key = elevenKey()
     if (!key) {
       res.writeHead(503, cors)
@@ -995,6 +1036,12 @@ const handleRequest = async (req, res) => {
             : 'webm'
       const form = new FormData()
       form.append('model_id', 'scribe_v1')
+      // Without it Scribe detects the language per segment, and a two-word
+      // segment ("Hey Jarvis") is exactly where detection goes wrong.
+      form.append(
+        'language_code',
+        langOf(new URL(req.url, 'http://x').searchParams.get('lang')),
+      )
       form.append(
         'file',
         new Blob([Buffer.concat(chunks)], { type }),
@@ -1126,7 +1173,7 @@ const RESULT_FAILURES = {
   default: 'The turn ended without an answer.',
 }
 
-wss.on('connection', (socket) => {
+wss.on('connection', (socket, req) => {
   console.log('[jarvis] client connected')
 
   // Answer the HUD straight away rather than making it wait for the agent's
@@ -1323,7 +1370,9 @@ wss.on('connection', (socket) => {
       // tuned for a coding agent — verbose, file-oriented, and a large chunk
       // of input tokens on every turn. Replacing it makes the persona stick,
       // keeps answers short enough to speak, and cuts cost per turn.
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: systemPromptFor(
+        langOf(new URL(req.url ?? '/', 'http://x').searchParams.get('lang')),
+      ),
       // Run from JARVIS's own workspace rather than the home directory. MCP
       // discovery does not depend on it — settingSources is empty and the
       // servers are passed in explicitly above — and file tools resolve

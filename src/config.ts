@@ -75,6 +75,26 @@ export const BRIDGE_WS_URL = str(import.meta.env.VITE_BRIDGE_URL) ?? 'ws://local
 export const BRIDGE_HTTP_URL = BRIDGE_WS_URL.replace(/^ws/, 'http')
 
 /**
+ * The language JARVIS hears and speaks.
+ *
+ *   'en' — British English, the original character (default).
+ *   'fr' — French: fr-FR recognition, a French system voice, French canned
+ *          lines, and a bridge persona told to answer in French.
+ *
+ * The bridge learns it from the app (on the socket URL and on /stt and /tts),
+ * so this one line in .env.local is the only switch.
+ */
+export const LANG: 'en' | 'fr' = choice(
+  'VITE_LANG',
+  import.meta.env.VITE_LANG,
+  ['en', 'fr'] as const,
+  'en',
+)
+
+/** BCP-47 locale for SpeechRecognition and speechSynthesis. */
+export const LOCALE = LANG === 'fr' ? 'fr-FR' : 'en-GB'
+
+/**
  * Speech output engine.
  *
  * false (default) — the browser's own speechSynthesis. Runs on-device, so
@@ -107,12 +127,25 @@ export const USE_ELEVENLABS = flag(
  *     quantisation often silently falls back to CPU on WebGPU, which is the
  *     likely cause.
  */
-export const TTS_ENGINE: 'kokoro' | 'system' = choice(
+const ttsEngine: 'kokoro' | 'system' = choice(
   'VITE_TTS_ENGINE',
   import.meta.env.VITE_TTS_ENGINE,
   ['kokoro', 'system'] as const,
   'system',
 )
+
+/**
+ * kokoro-js only phonemises English (its voice table and phonemiser stop at
+ * en-us / en-gb), so in any other language it would read French text with an
+ * English mouth. The system voice is the only honest option there.
+ */
+export const TTS_ENGINE: 'kokoro' | 'system' =
+  ttsEngine === 'kokoro' && LANG !== 'en'
+    ? (console.warn(
+        `[jarvis] VITE_TTS_ENGINE=kokoro has no ${LANG} voice — using "system".`,
+      ),
+      'system')
+    : ttsEngine
 
 /**
  * Which Kokoro voice. All four are British male:
@@ -301,4 +334,13 @@ Using tools:
 - If a tool fails or isn't connected, one plain sentence saying so.
 - For anything outward-facing or destructive (sending mail, posting, paying,
   deleting) say exactly what you're about to do and wait for confirmation.
-- If you don't know, say you don't know.`
+- If you don't know, say you don't know.${
+  LANG === 'fr'
+    ? `
+
+Language: always reply in French, whatever language the request or a tool
+result is in. Use "vous", never "tu". "Sir" becomes "monsieur". Say numbers,
+dates and times as a French speaker would: "huit heures quinze", "le premier
+août".`
+    : ''
+}`

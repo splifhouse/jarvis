@@ -15,38 +15,65 @@
  *   - No filler words, no enthusiasm, no apology, no exclamation marks.
  *   - "Sir" fronted means urgency; final means routine. These are all routine,
  *     so it goes at the end, and only sometimes.
+ *
+ * The French lines follow the same rules: nominal or participial, "monsieur"
+ * at the end and only sometimes, vouvoiement, no "tout de suite".
  */
 
+import { LANG } from '../config'
+
+/** The English line or its French counterpart, per VITE_LANG. */
+const L = <T,>(en: T, fr: T): T => (LANG === 'fr' ? fr : en)
+
 /** Said as soon as the first tool fires, before any answer exists. */
-const WORKING = [
-  'Working on it, sir.',
-  'Compiling.',
-  'Retrieving.',
-  'Accessing the archive.',
-  'Cross-referencing.',
-  'Running the query now.',
-  'Searching.',
-  'Under way.',
-]
+const WORKING = L(
+  [
+    'Working on it, sir.',
+    'Compiling.',
+    'Retrieving.',
+    'Accessing the archive.',
+    'Cross-referencing.',
+    'Running the query now.',
+    'Searching.',
+    'Under way.',
+  ],
+  [
+    "J'y travaille, monsieur.",
+    'Compilation.',
+    'Récupération en cours.',
+    'Accès aux archives.',
+    'Recoupement en cours.',
+    'Requête en cours.',
+    'Recherche.',
+    'En cours.',
+  ],
+)
 
 /** Acknowledging an order where no tool is involved. */
-const ACKNOWLEDGE = [
-  'As you wish, sir.',
-  'Very good, sir.',
-  'Certainly.',
-  'Understood.',
-  'Consider it done.',
-  'Directly, sir.',
-]
+const ACKNOWLEDGE = L(
+  [
+    'As you wish, sir.',
+    'Very good, sir.',
+    'Certainly.',
+    'Understood.',
+    'Consider it done.',
+    'Directly, sir.',
+  ],
+  [
+    'Comme vous voudrez, monsieur.',
+    'Bien, monsieur.',
+    'Certainement.',
+    'Entendu.',
+    "C'est comme si c'était fait.",
+    "J'y veille, monsieur.",
+  ],
+)
 
 /** Answering to his name, before the user has said what they want. */
-const ATTENTION = [
-  'Yes, sir?',
-  'Sir?',
-  'At your service, sir.',
-  'Standing by.',
-  'Awake, sir.',
-]
+const ATTENTION = L(
+  ['Yes, sir?', 'Sir?', 'At your service, sir.', 'Standing by.', 'Awake, sir.'],
+  ['Oui, monsieur ?', 'Monsieur ?', 'À votre service, monsieur.', 'Je vous écoute.', 'Présent, monsieur.'],
+)
 
 /**
  * Avoids repeating the same phrase twice running, which is what makes canned
@@ -91,7 +118,10 @@ type Rule = {
   lines: string[]
 }
 
-const FOOTAGE = ['Assembling the footage.', 'Rendering the sequence.']
+const FOOTAGE = L(
+  ['Assembling the footage.', 'Rendering the sequence.'],
+  ['Assemblage des images.', 'Rendu de la séquence.'],
+)
 
 const BY_TOOL: Rule[] = [
   // Video sits above image because higgsfield and palmier both do either, so
@@ -101,50 +131,62 @@ const BY_TOOL: Rule[] = [
   {
     server: /higgsfield|openrouter-image|dalle|flux|midjourney/,
     tool: /image|photo|thumbnail|render|upscale|seedream/,
-    lines: ['Rendering.', 'Composing it now.'],
+    lines: L(['Rendering.', 'Composing it now.'], ['Rendu en cours.', 'Composition en cours.']),
   },
   // The editors, once the two rules that read the verb have had their turn.
   { server: /palmier|heygen|runway|descript/, lines: FOOTAGE },
   {
     server: /playwright|puppeteer|browserbase|chrome/,
     tool: /\bbrowser\b|navigate/,
-    lines: ['Opening the browser.', 'Navigating.'],
+    lines: L(['Opening the browser.', 'Navigating.'], ['Ouverture du navigateur.', 'Navigation.']),
   },
   {
     server: /android|\badb\b|simulator/,
     tool: /\bdevice\b|\bapk\b|\bphone\b/,
-    lines: ['Reaching the device.', 'Connecting to your phone.'],
+    lines: L(
+      ['Reaching the device.', 'Connecting to your phone.'],
+      ["Connexion à l'appareil.", 'Connexion à votre téléphone.'],
+    ),
   },
   {
     server: /gmail|\bmail\b/,
     tool: /gmail|\bmail\b|email|inbox/,
-    lines: ['Checking your mail.', 'Reading the inbox.'],
+    lines: L(
+      ['Checking your mail.', 'Reading the inbox.'],
+      ['Consultation de votre courrier.', 'Lecture de la boîte de réception.'],
+    ),
   },
   // Calendar keys off "calendar" alone. "event" used to live here, which is how
   // a Mixpanel event query came out as "Checking your calendar."
   {
     tool: /calendar|\bdiary\b|\bmeeting\b/,
-    lines: ['Checking your calendar.', 'Consulting the diary.'],
+    lines: L(
+      ['Checking your calendar.', 'Consulting the diary.'],
+      ['Consultation de votre agenda.', 'Vérification du calendrier.'],
+    ),
   },
   {
     server: /elevenlabs|openai-tts/,
     tool: /speech|\bvoice\b|\btts\b|text_to_sound/,
-    lines: ['Synthesising.', 'Working on it, sir.'],
+    lines: L(['Synthesising.', 'Working on it, sir.'], ['Synthèse en cours.', "J'y travaille, monsieur."]),
   },
   {
     server: /spotify|sonos/,
     tool: /\bplay\b|\bmusic\b|playlist|\btrack\b/,
-    lines: ['Queuing it up.', 'Putting it on.'],
+    lines: L(['Queuing it up.', 'Putting it on.'], ['Mise en file.', 'Lancement de la lecture.']),
   },
   {
     server: /^home|homeassistant|\bhue\b|\bhass\b/,
     tool: /\blights?\b|thermostat|\bdimmer\b/,
-    lines: ['Adjusting it now.', 'Seeing to it, sir.'],
+    lines: L(['Adjusting it now.', 'Seeing to it, sir.'], ['Réglage en cours.', "J'y veille, monsieur."]),
   },
   {
     server: /github|linear|jira|sentry/,
     tool: /\brepo\b|repository|\bissues?\b|pull_request|\bcommit\b/,
-    lines: ['Checking the repository.', 'Consulting the tracker.'],
+    lines: L(
+      ['Checking the repository.', 'Consulting the tracker.'],
+      ['Vérification du dépôt.', 'Consultation du suivi.'],
+    ),
   },
   // Also where the anonymously named analytics servers land — theirs are bare
   // UUIDs, so only the tool half says anything: Get-Report, Get-Events,
@@ -153,12 +195,12 @@ const BY_TOOL: Rule[] = [
   {
     server: /mixpanel|clarity|posthog|amplitude/,
     tool: /analytic|\bmetrics?\b|\breports?\b|\bevents?\b|cohort|funnel|dashboard|\bquery\b/,
-    lines: ['Running the query.', 'Pulling the figures.'],
+    lines: L(['Running the query.', 'Pulling the figures.'], ['Requête en cours.', 'Extraction des chiffres.']),
   },
   {
     server: /\bexa\b|serper|serpapi|perplexity|tavily|brave/,
     tool: /search|\bweb\b|\bfetch\b|crawl|research/,
-    lines: ['Searching.', 'Consulting the record.'],
+    lines: L(['Searching.', 'Consulting the record.'], ['Recherche.', 'Consultation des sources.']),
   },
 ]
 

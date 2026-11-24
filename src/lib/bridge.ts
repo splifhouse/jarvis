@@ -1,6 +1,13 @@
 import type { AskHandlers } from './anthropic'
 import type { Blade, Panel } from '../store'
-import { BRIDGE_WS_URL } from '../config'
+import { BRIDGE_WS_URL, LANG } from '../config'
+
+/** The bridge picks its persona's language from the socket URL. */
+function socketUrl(): string {
+  const url = new URL(BRIDGE_WS_URL)
+  url.searchParams.set('lang', LANG)
+  return url.toString()
+}
 
 /**
  * Client for the local bridge (see bridge/server.mjs).
@@ -218,7 +225,7 @@ function connect(): Promise<WebSocket> {
   firstReady = deferred()
 
   connecting = new Promise<WebSocket>((resolve, reject) => {
-    const ws = new WebSocket(BRIDGE_WS_URL)
+    const ws = new WebSocket(socketUrl())
     let settled = false
 
     /**
